@@ -10,15 +10,13 @@ python_version = "3.7"
 pudb = "*"
 torchsummary = "*"
 line-profiler = "*"
-pynvim = "*"
-neovim = "*"
 jedi = "*"
 sphinx = "*"
 sphinx_rtd_theme = "*"
 
 [packages]
-torch = "==1.4.0"
-torchvision = "==0.5.0"
+torchvision = "==0.11.2"
+torch = "==1.10.1"
 numpy = "*"
 jupyterlab = "*"
 ipykernel = "*"
@@ -41,7 +39,6 @@ easydict = "*"
 sklearn = "*"
 wordcloud = "*"
 transformers = "*"
-adabelief-pytorch = "==0.1.0"
 
 [scripts]
 main = 'python src/main.py'

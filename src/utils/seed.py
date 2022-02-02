@@ -1,8 +1,8 @@
 import os
 import random
-
-import numpy as np
 import torch
+import torch
+import jax.numpy as np
 
 
 def seed_everything(seed=42):

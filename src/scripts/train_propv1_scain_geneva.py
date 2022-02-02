@@ -346,7 +346,7 @@ def train_propv1_scain_geneva(cfg):
         if "stdin" in cfg:
             stdin = cfg.stdin
         else:
-            stdin = input("Press [Y/n]: ")
+            stdin = "n"
 
         # if Yes --> delete old files
         if stdin == "Y":

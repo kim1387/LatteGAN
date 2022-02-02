@@ -2,7 +2,7 @@ import os
 import shutil
 import uuid
 
-import numpy as np
+import jax.numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
@@ -490,7 +490,7 @@ def pretrain_tirg(cfg):
     SAVE_DIR = os.path.join(SAVE_ROOT_DIR, cfg.name)
     if os.path.exists(SAVE_DIR):
         logger.warning(f"{SAVE_DIR} already exists. Overwrite by current run?")
-        stdin = input("Press [Y/n]: ")
+        stdin = "n"
         # if Yes --> delete old files
         if stdin == "Y":
             shutil.rmtree(SAVE_DIR)

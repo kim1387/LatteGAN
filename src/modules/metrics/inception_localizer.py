@@ -4,7 +4,7 @@ from ast import literal_eval
 
 import h5py
 import cv2
-import numpy as np
+import jax.numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.metrics import multilabel_confusion_matrix
 from tqdm import tqdm
@@ -16,6 +16,7 @@ import torchvision.transforms as transforms
 from torchvision.datasets.folder import has_file_allowed_extension
 
 from modules.metrics.object_localizer import Inception3ObjectLocalizer
+from tpu_device import tpu_device
 
 from logging import getLogger
 logger = getLogger(__name__)
@@ -151,7 +152,7 @@ def setup_inception_model(num_classes, pretrained=False):
     model = nn.DataParallel(Inception3ObjectLocalizer(
         num_objects=num_classes,
         pretrained=pretrained,
-        num_coords=num_coords)).cuda()
+        num_coords=num_coords)).to(tpu_device)
     return model
 
 
@@ -165,7 +166,7 @@ def _init_inception(model_path):
         checkpoint['num_classes'], pretrained=checkpoint['pretrained']
     )
     if checkpoint['cuda_enabled']:
-        loaded_model = loaded_model.cuda()
+        loaded_model = loaded_model.to(tpu_device)
         # see t.ly/SWK2 for more information.
         # torch.backends.cudnn.benchmark = True
     loaded_model.load_state_dict(checkpoint['state_dict'])
@@ -240,8 +241,8 @@ def get_obj_det_acc(dataloader):
     objs_all = []
 
     for _, (sample, gt, objs, flag) in enumerate(tqdm(dataloader)):
-        sample = sample.cuda()
-        gt = gt.cuda()
+        sample = sample.to(tpu_device)
+        gt = gt.to(tpu_device)
 
         detection_logits, locations = loaded_model(sample)
         gt_detection_logits, gt_locations = loaded_model(gt)

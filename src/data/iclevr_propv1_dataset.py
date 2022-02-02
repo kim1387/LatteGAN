@@ -2,7 +2,7 @@ from ast import literal_eval
 
 import h5py
 import cv2
-import numpy as np
+import jax.numpy as np
 
 import torch
 from torch.utils.data import Dataset

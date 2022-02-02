@@ -1,9 +1,10 @@
 import h5py
 
-import numpy as np
+import jax.numpy as np
 
 import torch
 from torch.utils.data import Dataset
+import numpy.random as np_random
 
 
 class CoDrawRetrievalDataset(Dataset):
@@ -30,9 +31,9 @@ class CoDrawRetrievalDataset(Dataset):
 
     def shuffle(self, random_state=None):
         if random_state is None:
-            rnd = np.random.mtrand._rand
+            rnd = np_random.mtrand._rand
         elif isinstance(random_state, int):
-            rnd = np.random.RandomState(random_state)
+            rnd = np_random.RandomState(random_state)
         else:
             raise ValueError
         rnd.shuffle(self.keys)
@@ -106,7 +107,7 @@ class CoDrawRetrievalDataset(Dataset):
         seq_len = len(tokens)
         word_embeddings = np.zeros((seq_len, 300))
         for i, w in enumerate(tokens):
-            word_embeddings[i] = self.glove[w]
+            word_embeddings = word_embeddings.at[i].set(self.glove[w])
 
         return word_embeddings, seq_len
 
@@ -139,6 +140,8 @@ def _parse_glove(glove_path):
 
 
 def codraw_retrieval_collate_fn(batch):
+    from tpu_device import tpu_device
+
     batch_size = len(batch)
     c, h, w = batch[0]["prev_image"].shape
 
@@ -176,29 +179,48 @@ def codraw_retrieval_collate_fn(batch):
         objects = b["objects"]
         added_objects = b["added_objects"]
 
-        batch_prev_images[i] = prev_image
-        batch_images[i] = image
-        batch_prev_embs[i, :prev_seq_len] = prev_embs
-        batch_embs[i, :seq_len] = embs
-        batch_prev_seq_lens[i] = prev_seq_len
-        batch_seq_lens[i] = seq_len
-        batch_objects[i] = objects
-        batch_added_objects[i] = added_objects
+        batch_prev_images = batch_prev_images.at[i].set(prev_image)
+        batch_images = batch_images.at[i].set(image)
+        batch_prev_embs = batch_prev_embs.at[i, :prev_seq_len].set(prev_embs)
+        batch_embs = batch_embs.at[i, :seq_len].set(embs)
+        batch_prev_seq_lens = batch_prev_seq_lens.at[i].set(prev_seq_len)
+        batch_seq_lens = batch_seq_lens.at[i].set(seq_len)
+        batch_objects = batch_objects.at[i].set(objects)
+        batch_added_objects = batch_added_objects.at[i].set(added_objects)
         batch_prev_utters.append(prev_utter)
         batch_utters.append(utter)
 
+    # sample = {
+    #     # image
+    #     "prev_image": torch.FloatTensor(batch_prev_images).to(tpu_device),
+    #     "image": torch.FloatTensor(batch_images).to(tpu_device),
+    #     # text
+    #     "prev_embs": torch.FloatTensor(batch_prev_embs).to(tpu_device),
+    #     "embs": torch.FloatTensor(batch_embs).to(tpu_device),
+    #     "prev_seq_len": torch.LongTensor(batch_prev_seq_lens).to(tpu_device),
+    #     "seq_len": torch.LongTensor(batch_seq_lens).to(tpu_device),
+    #     # auxiliary
+    #     "objects": torch.FloatTensor(batch_objects).to(tpu_device),
+    #     "added_objects": torch.FloatTensor(batch_added_objects).to(tpu_device),
+    #     # raw text
+    #     "prev_utter": batch_prev_utters,
+    #     "utter": batch_utters,
+    # }
+
+    import numpy as nnp  # naive numpy
+
     sample = {
         # image
-        "prev_image": torch.FloatTensor(batch_prev_images),
-        "image": torch.FloatTensor(batch_images),
+        "prev_image": torch.from_numpy(nnp.asarray(batch_prev_images)).to(tpu_device),
+        "image": torch.from_numpy(nnp.asarray(batch_images)).to(tpu_device),
         # text
-        "prev_embs": torch.FloatTensor(batch_prev_embs),
-        "embs": torch.FloatTensor(batch_embs),
-        "prev_seq_len": torch.LongTensor(batch_prev_seq_lens),
-        "seq_len": torch.LongTensor(batch_seq_lens),
+        "prev_embs": torch.from_numpy(nnp.asarray(batch_prev_embs)).to(tpu_device),
+        "embs": torch.from_numpy(nnp.asarray(batch_embs)).to(tpu_device),
+        "prev_seq_len": torch.from_numpy(nnp.asarray(batch_prev_seq_lens)).to(tpu_device),
+        "seq_len": torch.from_numpy(nnp.asarray(batch_seq_lens)).to(tpu_device),
         # auxiliary
-        "objects": torch.FloatTensor(batch_objects),
-        "added_objects": torch.FloatTensor(batch_added_objects),
+        "objects": torch.from_numpy(nnp.asarray(batch_objects)).to(tpu_device),
+        "added_objects": torch.from_numpy(nnp.asarray(batch_added_objects)).to(tpu_device),
         # raw text
         "prev_utter": batch_prev_utters,
         "utter": batch_utters,

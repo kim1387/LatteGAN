@@ -31,10 +31,10 @@ test_embed_dataset_path: "./data/CoDraw/codraw_test_embeddings_exp78.h5"
 detector_localizer_path: "./data/models/codraw_inception_best_checkpoint.pth"
 
 # run
-batch_size: 64
-eval_batch_size: 10
-num_workers: 32
-epochs: 400  # batch_size 32 --> 64, then epochs 200 --> 400
+batch_size: 1
+eval_batch_size: 1
+num_workers: 0
+epochs: 30  # batch_size 32 --> 64, then epochs 200 --> 400
 image_size: 128
 stdin: "Y"
 

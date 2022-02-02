@@ -1,7 +1,7 @@
 import os
 
 import cv2
-import numpy as np
+import jax.numpy as np
 
 import torch
 import torch.nn as nn
@@ -16,6 +16,7 @@ from .generator import GeneratorRecurrentGANRes
 from .discriminator import DiscriminatorAdditiveGANRes
 from .loss import HingeAdversarial, gradient_penalty, kl_penalty
 from .utils import get_grad_norm
+from tpu_device import tpu_device
 
 
 class GeNeVATrainer:
@@ -73,16 +74,16 @@ class GeNeVATrainer:
 
         # modules
         self.sentence_encoder = nn.DataParallel(SentenceEncoder(
-            embedding_dim=embedding_dim)).cuda()
+            embedding_dim=embedding_dim)).to(tpu_device)
         self.condition_encoder = nn.DataParallel(ConditionEncoder(
             embedding_dim=embedding_dim,
-            hidden_dim=hidden_dim)).cuda()
+            hidden_dim=hidden_dim)).to(tpu_device)
         self.image_encoder = nn.DataParallel(
-            ImageEncoder(image_feat_dim=image_feat_dim)).cuda()
+            ImageEncoder(image_feat_dim=image_feat_dim)).to(tpu_device)
 
         self.rnn = nn.DataParallel(DialogEncoder(
             hidden_dim=hidden_dim,
-            embedding_dim=embedding_dim), dim=1).cuda()
+            embedding_dim=embedding_dim), dim=1).to(tpu_device)
 
         self.generator = nn.DataParallel(GeneratorRecurrentGANRes(
             conditional=conditional,
@@ -93,7 +94,7 @@ class GeNeVATrainer:
             activation=activation,
             gen_fusion=gen_fusion,
             self_attention=self_attention,
-            cond_kl_reg=cond_kl_reg)).cuda()
+            cond_kl_reg=cond_kl_reg)).to(tpu_device)
         self.discriminator = nn.DataParallel(DiscriminatorAdditiveGANRes(
             activation=activation,
             disc_sn=disc_sn,
@@ -102,7 +103,7 @@ class GeNeVATrainer:
             disc_cond_channels=disc_cond_channels,
             self_attention=self_attention,
             condition_dim=hidden_dim,
-            num_objects=num_objects)).cuda()
+            num_objects=num_objects)).to(tpu_device)
 
         # optimizers
         self.sentence_encoder_optimizer = Adam(
@@ -128,7 +129,7 @@ class GeNeVATrainer:
 
         # criterion
         self.criterion = HingeAdversarial()
-        self.aux_criterion = nn.DataParallel(nn.BCELoss()).cuda()
+        self.aux_criterion = nn.DataParallel(nn.BCELoss()).to(tpu_device)
 
     def predict_batch(self, batch, save_path):
         # NOTE: eval mode of GAN is sometimes disabled as a technique.

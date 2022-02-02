@@ -1,7 +1,6 @@
 import os
 from collections import defaultdict
 
-import h5py
 import numpy as np
 from tqdm import tqdm
 
@@ -14,6 +13,11 @@ from transformers import BertTokenizerFast
 from data.codraw_retrieval_dataset import CoDrawRetrievalDataset, codraw_retrieval_collate_fn
 from data.iclevr_retrieval_dataset import ICLEVRRetrievalDataset, iclevr_retrieval_collate_fn
 from modules.retrieval.sentence_encoder import SentenceEncoder, BERTSentenceEncoder
+from scripts.embs_spawn import run_dataloader
+from tpu_device import devices, tpu_device
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.core.xla_model as xm
+import torch_xla.distributed.xla_multiprocessing as xmp
 
 from logging import getLogger
 logger = getLogger(__name__)
@@ -32,20 +36,27 @@ class SentenceEmbeddingGenerator:
             )
             state_dict = None
         else:
-            state_dict = torch.load(cfg.model_path)
+            state_dict = torch.load(
+                cfg.model_path, map_location=torch.device('cpu'))
 
         if cfg.sentence_encoder_type == "rnn":
             self.rnn_prev = nn.DataParallel(
                 SentenceEncoder(cfg.text_dim),
-                device_ids=[0],
-            ).cuda()
+                device_ids=devices,
+            )
+
             self.rnn_curr = nn.DataParallel(
                 SentenceEncoder(cfg.text_dim),
-                device_ids=[0],
-            ).cuda()
+                device_ids=devices,
+            )
+
             if state_dict is not None:
                 self.rnn_prev.load_state_dict(state_dict["rnn_prev"])
                 self.rnn_curr.load_state_dict(state_dict["rnn_curr"])
+
+            self.rnn_prev = self.rnn_prev.to(tpu_device)
+            self.rnn_curr = self.rnn_curr.to(tpu_device)
+
             self.rnn_prev.eval()
             self.rnn_curr.eval()
         elif cfg.sentence_encoder_type == "bert":
@@ -53,8 +64,8 @@ class SentenceEmbeddingGenerator:
                 from_pretrained("bert-base-uncased")
             self.bert = nn.DataParallel(
                 BERTSentenceEncoder(),
-                device_ids=[0],
-            ).cuda()
+                device_ids=devices,
+            ).to(tpu_device)
             if state_dict is not None:
                 self.bert.load_state_dict(state_dict["bert"])
             self.bert.eval()
@@ -167,64 +178,15 @@ class SentenceEmbeddingGenerator:
         all_text_memories = []
         all_text_lengths = []
 
-        with torch.no_grad():
-            for batch in tqdm(dataloader):
-                if self.sentence_encoder_type == "rnn":
-                    # extract from batch
-                    prev_embs = batch["prev_embs"]
-                    embs = batch["embs"]
-                    prev_seq_len = batch["prev_seq_len"]
-                    seq_len = batch["seq_len"]
+        if self.sentence_encoder_type == "rnn":
+            models = (self.rnn_prev, self.rnn_curr)
+        else:
+            models = (self.tokenizer, self.bert)
 
-                    # forward sentence encoder
-                    _, _, context = self.rnn_prev(
-                        prev_embs, prev_seq_len)
-                    text_memories, text_feature, _ = self.rnn_curr(
-                        embs, seq_len, context)
+        run_dataloader(models, self.sentence_encoder_type, dataloader, all_text_features,
+                       all_text_memories, all_text_lengths)
 
-                elif self.sentence_encoder_type == "bert":
-                    prev_utter = batch["prev_utter"]
-                    utter = batch["utter"]
-
-                    inputs = self.tokenizer(
-                        text=prev_utter,
-                        text_pair=utter,
-                        add_special_tokens=True,
-                        padding=True,
-                        truncation=True,
-                        return_tensors="pt",
-                    )
-
-                    text_memories, text_feature, key_padding_mask = self.bert(
-                        inputs["input_ids"],
-                        inputs["attention_mask"],
-                        inputs["token_type_ids"],
-                    )
-
-                # push to list
-                for i in range(text_memories.size(0)):
-                    if self.sentence_encoder_type == "rnn":
-                        all_text_features.append(
-                            text_feature[i].cpu().numpy())
-                        all_text_memories.append(
-                            text_memories[i].cpu().numpy())
-                        all_text_lengths.append(
-                            seq_len[i].cpu().numpy())
-                    elif self.sentence_encoder_type == "bert":
-                        all_text_features.append(
-                            text_feature[i].cpu().numpy())
-
-                        # output text memories of bert includes embedding of previous instructions.
-                        # key_padding_mask is False where [CLS] & [[SENTENCE B], ...] & [SEP]
-                        # sum of NOT key_padding_mask == text length
-                        bool_indices = ~key_padding_mask[i]
-                        _seq_len = np.array(bool_indices.sum().item())
-                        _text_memories = text_memories[i][bool_indices]
-
-                        all_text_memories.append(
-                            _text_memories.cpu().numpy())
-                        all_text_lengths.append(
-                            _seq_len)
+        import h5py
 
         # mapping dataset_id(did) to tuple of (start_index, end_index)
         # keys = [(access_id, turn_index), ...]
@@ -240,14 +202,17 @@ class SentenceEmbeddingGenerator:
         for did in id2idxtup.keys():
             start, end = id2idxtup[did]
             end += 1
+            # start, end = 0, 1
 
             # turns_text_embedding: shape=(l, D)
             # turns_text_length: shape=(l,)
             # l: dialog length
-            turns_text_embedding = np.stack(
-                all_text_features[start:end], axis=0)
-            turns_text_length = np.array(
-                all_text_lengths[start:end])
+            try:
+                turns_text_embedding = np.stack(
+                    all_text_features[start:end], axis=0)
+                turns_text_length = np.array(all_text_lengths[start:end])
+            except ValueError:
+                continue
 
             # turns_word_embeddings: shape=(l, ms, D)
             # ms: max text length of a dialog
@@ -255,9 +220,12 @@ class SentenceEmbeddingGenerator:
             turns_word_embeddings = np.zeros(
                 (len(turns_text_length), max(turns_text_length), self.cfg.text_dim))
             for i, j in enumerate(range(start, end)):
-                text_length = turns_text_length[i]
-                turns_word_embeddings[i, :text_length] = \
-                    all_text_memories[j][:text_length]
+                try:
+                    text_length = turns_text_length[i]
+                    turns_word_embeddings[i, :text_length] = \
+                        all_text_memories[j][:text_length]
+                except:
+                    pass
 
             scene = h5.create_group(did)
             scene.create_dataset(

@@ -4,6 +4,7 @@ import shutil
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from modules.geneva.trainer import GeNeVATrainer
 from modules.metrics.inception_localizer import calculate_inception_objects_accuracy
@@ -196,7 +197,7 @@ class Trainer:
             if self.cfg.dataset == "codraw":
                 self.dataset.shuffle()
 
-            for batch in self.dataloader:
+            for batch in tqdm(self.dataloader):
                 cnt_iter += 1
                 outputs = self.model.train_batch(batch)
 

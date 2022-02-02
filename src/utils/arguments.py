@@ -71,9 +71,9 @@ def load_edict_config(args):
     config : EasyDict
         EasyDict which has all parameters written in yaml file.
     """
-    with open(args.yaml_path, "r") as fp:
-        config = yaml.load(fp, Loader=yaml.SafeLoader)
+    with open(args.yaml_path, "rb") as fp:
 
+        config = yaml.load(fp, Loader=yaml.SafeLoader)
     config = edict(config)
 
     return config

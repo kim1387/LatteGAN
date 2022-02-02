@@ -14,8 +14,8 @@ test_dataset_path: "./data/CoDraw/codraw_test.h5"
 glove_path: "./data/misc/glove_codraw_iclevr.txt"
 
 # run
-batch_size: 50
-num_workers: 2
+batch_size: 1
+num_workers: 0
 
 # ==================================================
 # Special parameters

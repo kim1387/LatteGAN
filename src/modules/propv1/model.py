@@ -1,6 +1,6 @@
 import os
 
-import numpy as np
+import jax.numpy as np
 import cv2
 
 import torch
@@ -14,6 +14,7 @@ from .unet_discriminator import UnetDiscriminator
 from modules.geneva.loss import HingeAdversarial, gradient_penalty, kl_penalty
 from modules.geneva.utils import get_grad_norm
 from utils.truncnorm import truncated_normal
+from tpu_device import tpu_device
 
 
 class GeNeVAPropV1Model:
@@ -60,7 +61,7 @@ class GeNeVAPropV1Model:
                     norm=generator_norm,
                     use_spectral_norm=generator_sn,
                 )
-            ).cuda()
+            ).to(tpu_device)
             self.generator = nn.DataParallel(
                 GeneratorMultiScale(
                     condition_dim=embedding_dim,
@@ -78,7 +79,7 @@ class GeNeVAPropV1Model:
                     res_mask_post=res_mask_post,
                     multi_channel_gate=multi_channel_gate,
                 )
-            ).cuda()
+            ).to(tpu_device)
             self.eval_generator = nn.DataParallel(
                 GeneratorMultiScale(
                     condition_dim=embedding_dim,
@@ -96,7 +97,7 @@ class GeNeVAPropV1Model:
                     res_mask_post=res_mask_post,
                     multi_channel_gate=multi_channel_gate,
                 )
-            ).cuda()
+            ).to(tpu_device)
             self.eval_generator.load_state_dict(self.generator.state_dict())
         else:
             self.image_encoder = nn.DataParallel(
@@ -105,7 +106,7 @@ class GeNeVAPropV1Model:
                     norm=generator_norm,
                     use_spectral_norm=generator_sn,
                 )
-            ).cuda()
+            ).to(tpu_device)
             self.generator = nn.DataParallel(
                 Generator(
                     condition_dim=embedding_dim,
@@ -121,7 +122,7 @@ class GeNeVAPropV1Model:
                     res_mask_post=res_mask_post,
                     multi_channel_gate=multi_channel_gate,
                 )
-            ).cuda()
+            ).to(tpu_device)
             self.eval_generator = nn.DataParallel(
                 Generator(
                     condition_dim=embedding_dim,
@@ -137,7 +138,7 @@ class GeNeVAPropV1Model:
                     res_mask_post=res_mask_post,
                     multi_channel_gate=multi_channel_gate,
                 )
-            ).cuda()
+            ).to(tpu_device)
             self.eval_generator.load_state_dict(self.generator.state_dict())
 
         self.discriminator_arch = discriminator_arch
@@ -148,7 +149,7 @@ class GeNeVAPropV1Model:
                     discriminator_sn=discriminator_sn,
                     aux_detection_dim=num_objects,
                 )
-            ).cuda()
+            ).to(tpu_device)
         elif self.discriminator_arch == "unet":
             self.discriminator = nn.DataParallel(
                 UnetDiscriminator(
@@ -156,7 +157,7 @@ class GeNeVAPropV1Model:
                     discriminator_sn=discriminator_sn,
                     aux_detection_dim=num_objects,
                 )
-            ).cuda()
+            ).to(tpu_device)
         else:
             raise ValueError
 
@@ -182,7 +183,7 @@ class GeNeVAPropV1Model:
         self.gp_reg = gp_reg
         self.cond_kl_reg = cond_kl_reg
         self.criterion = HingeAdversarial()
-        self.aux_criterion = nn.DataParallel(nn.BCEWithLogitsLoss()).cuda()
+        self.aux_criterion = nn.DataParallel(nn.BCEWithLogitsLoss()).to(tpu_device)
 
     def predict_batch(self, batch, save_path):
         # NOTE: eval mode of GAN is sometimes disabled as a technique.

@@ -1,4 +1,4 @@
-import numpy as np
+import jax.numpy as np
 
 import torch
 from torchvision.utils import make_grid

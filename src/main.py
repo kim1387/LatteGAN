@@ -24,9 +24,9 @@ def main():
         cfg.seed = random.randint(1000, 2000)
 
     # seed fix & gpu set
-    seed_everything(cfg.seed)
-    set_visible_gpus(args.gpu_ids)
-    show_gpu_info()
+    # seed_everything(cfg.seed)
+    # set_visible_gpus(args.gpu_ids)
+    # show_gpu_info()
 
     # --------------------------------------------------
     # scripts

@@ -1,4 +1,4 @@
-import numpy as np
+import jax.numpy as np
 from sklearn.metrics import f1_score
 
 import torch
@@ -11,6 +11,7 @@ from adabelief_pytorch import AdaBelief
 from .sentence_encoder import SentenceEncoder, BERTSentenceEncoder
 from .tirg import TIRG
 from .tirg_spade import TIRGSPADE
+from tpu_device import tpu_device
 
 
 class TIRGModel:
@@ -46,7 +47,7 @@ class TIRGModel:
         n = resnet18(pretrained=True)
         idx = depth - 5 - 2
         n = list(n.children())[:idx]
-        self.cnn = nn.DataParallel(nn.Sequential(*n)).cuda()
+        self.cnn = nn.DataParallel(nn.Sequential(*n)).to(tpu_device)
         self.channels = 512 // (2 ** (5 - depth))
         # freeze cnn
         self.cnn.eval()
@@ -55,17 +56,17 @@ class TIRGModel:
 
         self.sentence_encoder_type = sentence_encoder_type
         if sentence_encoder_type == "rnn":
-            self.rnn_prev = nn.DataParallel(SentenceEncoder(text_dim)).cuda()
-            self.rnn_curr = nn.DataParallel(SentenceEncoder(text_dim)).cuda()
+            self.rnn_prev = nn.DataParallel(SentenceEncoder(text_dim)).to(tpu_device)
+            self.rnn_curr = nn.DataParallel(SentenceEncoder(text_dim)).to(tpu_device)
         elif sentence_encoder_type == "bert":
             self.tokenizer = BertTokenizerFast.\
                 from_pretrained("bert-base-uncased")
-            self.bert = nn.DataParallel(BERTSentenceEncoder()).cuda()
+            self.bert = nn.DataParallel(BERTSentenceEncoder()).to(tpu_device)
         else:
             raise ValueError
         # sentence vector to detection
         self.detector = nn.DataParallel(
-            nn.Linear(text_dim, num_objects)).cuda()
+            nn.Linear(text_dim, num_objects)).to(tpu_device)
 
         self.multi_channel_gate = multi_channel_gate
         if with_spade:
@@ -78,7 +79,7 @@ class TIRGModel:
                 res_mask_post=res_mask_post,
                 multi_channel_gate=multi_channel_gate,
                 num_objects=num_objects,
-            )).cuda()
+            )).to(tpu_device)
         else:
             self.tirg = nn.DataParallel(TIRG(
                 self.channels,
@@ -92,7 +93,7 @@ class TIRGModel:
                 res_mask_post=res_mask_post,
                 use_conv_final=use_conv_final,
                 multi_channel_gate=multi_channel_gate,
-            )).cuda()
+            )).to(tpu_device)
 
         # optimizers
 
@@ -134,23 +135,23 @@ class TIRGModel:
         # criterion
         self.loss_type = loss_type
         if loss_type == "ranking":
-            self.pool = nn.DataParallel(nn.AdaptiveAvgPool2d(1)).cuda()
-            self.cossim = nn.DataParallel(nn.CosineSimilarity(dim=1)).cuda()
-            self.relu = nn.DataParallel(nn.ReLU()).cuda()
+            self.pool = nn.DataParallel(nn.AdaptiveAvgPool2d(1)).to(tpu_device)
+            self.cossim = nn.DataParallel(nn.CosineSimilarity(dim=1)).to(tpu_device)
+            self.relu = nn.DataParallel(nn.ReLU()).to(tpu_device)
             self.margin = margin
             self.k = k
         elif loss_type == "l1":
-            self.l1 = nn.DataParallel(nn.L1Loss(reduction="none")).cuda()
+            self.l1 = nn.DataParallel(nn.L1Loss(reduction="none")).to(tpu_device)
         else:
             raise ValueError
 
         # gate loss
-        self.bce = nn.DataParallel(nn.BCELoss(reduction="none")).cuda()
+        self.bce = nn.DataParallel(nn.BCELoss(reduction="none")).to(tpu_device)
         self.gate_loss_gamma = gate_loss_gamma
 
         # detection loss
         self.bce_logits = nn.DataParallel(
-            nn.BCEWithLogitsLoss(reduction="none")).cuda()
+            nn.BCEWithLogitsLoss(reduction="none")).to(tpu_device)
         self.text_detection_gamma = text_detection_gamma
         self.gate_detection_gamma = gate_detection_gamma
 

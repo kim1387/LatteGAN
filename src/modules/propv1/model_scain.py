@@ -1,6 +1,6 @@
 import os
 
-import numpy as np
+import jax.numpy as np
 import cv2
 
 import torch
@@ -15,6 +15,7 @@ from .unet_discriminator import UnetDiscriminator
 from modules.geneva.loss import HingeAdversarial, gradient_penalty, kl_penalty
 from modules.geneva.utils import get_grad_norm
 from utils.truncnorm import truncated_normal
+from tpu_device import tpu_device
 
 from logging import getLogger
 logger = getLogger(__name__)
@@ -67,14 +68,14 @@ class GeNeVAPropV1ScainModel:
                 norm=generator_norm,
                 use_spectral_norm=generator_sn,
             )
-        ).cuda()
+        ).to(tpu_device)
         self.eval_image_encoder = nn.DataParallel(
             ImageEncoder(
                 image_feat_dim=image_feat_dim,
                 norm=generator_norm,
                 use_spectral_norm=generator_sn,
             )
-        ).cuda()
+        ).to(tpu_device)
         self.eval_image_encoder.load_state_dict(
             self.image_encoder.state_dict())
 
@@ -95,7 +96,7 @@ class GeNeVAPropV1ScainModel:
                 multi_channel_gate=multi_channel_gate,
                 use_relnet=use_relnet,
             )
-        ).cuda()
+        ).to(tpu_device)
         self.eval_generator = nn.DataParallel(
             Generator(
                 condition_dim=embedding_dim,
@@ -112,7 +113,7 @@ class GeNeVAPropV1ScainModel:
                 multi_channel_gate=multi_channel_gate,
                 use_relnet=use_relnet,
             )
-        ).cuda()
+        ).to(tpu_device)
         self.eval_generator.load_state_dict(
             self.generator.state_dict())
 
@@ -132,7 +133,7 @@ class GeNeVAPropV1ScainModel:
                         use_gate_for_stap=use_gate_for_stap,
                         use_co_attention=use_co_attention,
                     )
-                ).cuda()
+                ).to(tpu_device)
                 self.eval_discriminator = nn.DataParallel(
                     STAPDiscriminator(
                         condition_dim=embedding_dim,
@@ -144,7 +145,7 @@ class GeNeVAPropV1ScainModel:
                         use_gate_for_stap=use_gate_for_stap,
                         use_co_attention=use_co_attention,
                     )
-                ).cuda()
+                ).to(tpu_device)
             else:
                 self.discriminator = nn.DataParallel(
                     Discriminator(
@@ -153,7 +154,7 @@ class GeNeVAPropV1ScainModel:
                         aux_detection_dim=num_objects,
                         fusion=disc_fusion,
                     )
-                ).cuda()
+                ).to(tpu_device)
                 self.eval_discriminator = nn.DataParallel(
                     Discriminator(
                         condition_dim=embedding_dim,
@@ -161,7 +162,7 @@ class GeNeVAPropV1ScainModel:
                         aux_detection_dim=num_objects,
                         fusion=disc_fusion,
                     )
-                ).cuda()
+                ).to(tpu_device)
         elif self.discriminator_arch == "unet":
             assert not self.use_stap_disc
             assert disc_fusion == "subtract"
@@ -171,14 +172,14 @@ class GeNeVAPropV1ScainModel:
                     discriminator_sn=discriminator_sn,
                     aux_detection_dim=num_objects,
                 )
-            ).cuda()
+            ).to(tpu_device)
             self.eval_discriminator = nn.DataParallel(
                 UnetDiscriminator(
                     condition_dim=embedding_dim,
                     discriminator_sn=discriminator_sn,
                     aux_detection_dim=num_objects,
                 )
-            ).cuda()
+            ).to(tpu_device)
         else:
             raise ValueError
         self.eval_discriminator.load_state_dict(
@@ -206,7 +207,7 @@ class GeNeVAPropV1ScainModel:
         self.gp_reg = gp_reg
         self.cond_kl_reg = cond_kl_reg
         self.criterion = HingeAdversarial()
-        self.aux_criterion = nn.DataParallel(nn.BCEWithLogitsLoss()).cuda()
+        self.aux_criterion = nn.DataParallel(nn.BCEWithLogitsLoss()).to(tpu_device)
 
     def predict_batch(self, batch, save_path, num_parallel=10):
         # NOTE: eval mode of GAN is sometimes disabled as a technique.
